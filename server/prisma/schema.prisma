@@ -1,0 +1,98 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// Comptes administrateurs (mot de passe haché avec bcrypt)
+model Admin {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime @default(now())
+  lastLoginAt  DateTime?
+}
+
+/// Forfaits Internet proposés à la vente
+model Plan {
+  id            Int            @id @default(autoincrement())
+  name          String
+  price         Int // en FCFA
+  volumeMb      Int // volume en Mo (1 Go = 1024 Mo)
+  durationHours Int // durée de validité en heures
+  description   String
+  category      String         @default("Standard")
+  active        Boolean        @default(true)
+  popular       Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  subscriptions Subscription[]
+}
+
+/// Souscription d'un numéro à un forfait.
+/// Les caractéristiques du forfait sont copiées (snapshot) pour que l'historique
+/// reste exact même si le forfait est modifié ou supprimé ensuite.
+model Subscription {
+  id            String        @id @default(cuid())
+  phone         String // numéro bénéficiaire du forfait
+  planId        Int?
+  plan          Plan?         @relation(fields: [planId], references: [id], onDelete: SetNull)
+  planName      String
+  price         Int
+  volumeMb      Int
+  durationHours Int
+  status        String        @default("PENDING") // PENDING | ACTIVE | FAILED | CANCELLED
+  activatedAt   DateTime?
+  expiresAt     DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  transactions  Transaction[]
+
+  @@index([phone])
+  @@index([status])
+}
+
+/// Tentative de paiement (simulée) rattachée à une souscription
+model Transaction {
+  id             Int          @id @default(autoincrement())
+  reference      String       @unique
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  operator       String // MTN_MOMO | ORANGE_MONEY
+  payerPhone     String
+  amount         Int
+  status         String // SUCCESS | FAILED | CANCELLED
+  failureReason  String?
+  createdAt      DateTime     @default(now())
+
+  @@index([status])
+  @@index([operator])
+}
+
+/// Code de vérification (fictif) pour consulter son historique
+model VerificationCode {
+  id        Int      @id @default(autoincrement())
+  phone     String
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([phone])
+}
+
+/// Messages envoyés depuis le formulaire de contact
+model ContactMessage {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String
+  subject   String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
