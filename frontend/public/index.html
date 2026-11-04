@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MTN Abonnements</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <span class="logo">MTN</span>
+      <h1>Abonnements forfaits</h1>
+      <span id="health" class="health" title="État de l'API">API …</span>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section>
+      <h2>1. Forfaits disponibles</h2>
+      <div id="plans" class="plans" aria-live="polite">Chargement…</div>
+    </section>
+
+    <section>
+      <h2>2. Souscrire</h2>
+      <form id="subscribe" class="card" novalidate>
+        <label for="phone">Numéro MTN</label>
+        <input id="phone" name="phone" inputmode="tel" placeholder="ex : 670123456" autocomplete="tel" required>
+        <label for="plan">Forfait</label>
+        <select id="plan" name="plan" required></select>
+        <button type="submit">Souscrire</button>
+        <p id="subscribe-msg" class="msg" role="status"></p>
+      </form>
+    </section>
+
+    <section>
+      <h2>3. Historique</h2>
+      <form id="history-form" class="card" novalidate>
+        <label for="history-phone">Numéro MTN</label>
+        <input id="history-phone" inputmode="tel" placeholder="ex : 670123456" required>
+        <button type="submit">Voir l'historique</button>
+        <p id="history-msg" class="msg" role="status"></p>
+        <ul id="history" class="history"></ul>
+      </form>
+    </section>
+  </main>
+
+  <footer class="wrap foot">Plateforme de test – Groupe 12 – ENSPD GIT</footer>
+  <script src="app.js"></script>
+</body>
+</html>

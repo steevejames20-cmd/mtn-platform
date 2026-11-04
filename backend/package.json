@@ -1,0 +1,18 @@
+{
+  "name": "mtn-backend-test",
+  "version": "1.0.0",
+  "description": "Backend de test (MVP) de la plateforme d'abonnement MTN - Groupe 12",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "4.22.3",
+    "pg": "8.13.1"
+  }
+}
