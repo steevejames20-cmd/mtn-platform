@@ -1,11 +1,10 @@
 node_modules
 npm-debug.log
 .git
-.gitignore
 .env
 .env.*
 Dockerfile
 .dockerignore
-README.md
 tests
-coverage
+prisma/*.db
+prisma/*.db-journal

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "API Express + Prisma (SQLite) pour la plateforme de souscription aux forfaits Internet",
+  "description": "API Express + Prisma (PostgreSQL) pour la plateforme de souscription aux forfaits Internet",
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
@@ -22,9 +22,7 @@
     "express-rate-limit": "^7.4.1",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
+    "prisma": "^6.10.0",
     "zod": "^3.23.8"
-  },
-  "devDependencies": {
-    "prisma": "^6.10.0"
   }
 }

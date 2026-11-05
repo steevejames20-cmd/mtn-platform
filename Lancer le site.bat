@@ -10,11 +10,30 @@ if errorlevel 1 (
   exit /b 1
 )
 
+docker info >nul 2>nul
+if errorlevel 1 (
+  echo [ERREUR] Docker n'est pas demarre. Ouvrez Docker Desktop, attendez qu'il soit pret, puis relancez ce fichier.
+  pause
+  exit /b 1
+)
+
 if not exist "node_modules" call npm install
 if not exist "server\node_modules" call npm --prefix server install
 if not exist "client\node_modules" call npm --prefix client install
+if not exist ".env" copy ".env.example" ".env" >nul
 if not exist "server\.env" copy "server\.env.example" "server\.env" >nul
-if not exist "server\prisma\dev.db" call npm run setup
+
+echo.
+echo Demarrage de la base PostgreSQL...
+call npm run db:up
+if errorlevel 1 (
+  echo [ERREUR] La base PostgreSQL n'a pas demarre. Consultez DOCKER.md, section Depannage.
+  pause
+  exit /b 1
+)
+
+rem Cree les tables et les donnees de demonstration si besoin (sans effet si deja fait)
+call npm run setup
 
 echo.
 echo ============================================================
@@ -22,6 +41,7 @@ echo   NetConnect demarre...
 echo   Le site va s'ouvrir sur http://localhost:5173
 echo   Administration : http://localhost:5173/admin
 echo   Pour arreter le site : fermez cette fenetre.
+echo   Pour arreter la base : npm run db:down
 echo ============================================================
 echo.
 

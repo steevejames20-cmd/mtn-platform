@@ -1,6 +1,7 @@
 name: mtn-subscription
 
 services:
+  # Base de données PostgreSQL : tables créées par le backend (prisma db push)
   db:
     image: postgres:16.4-alpine
     restart: unless-stopped
@@ -10,7 +11,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?Copier .env.example vers .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -24,37 +24,43 @@ services:
           memory: 256M
           cpus: "0.50"
 
+  # API Express + Prisma (dossier server/)
   backend:
     image: ${REGISTRY:-local}/mtn-backend:${IMAGE_TAG:-dev}
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: ./server
     restart: unless-stopped
+    init: true
     environment:
-      NODE_ENV: ${NODE_ENV:-production}
-      PORT: 3000
-      DATABASE_URL: postgresql://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@db:5432/${POSTGRES_DB:?}
+      NODE_ENV: production
+      PORT: 4000
+      TZ: Africa/Douala
+      DATABASE_URL: postgresql://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@db:5432/${POSTGRES_DB:?}?schema=public
+      JWT_SECRET: ${JWT_SECRET:?Définir JWT_SECRET dans .env}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?Définir ADMIN_EMAIL dans .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Définir ADMIN_PASSWORD dans .env}
+      ADMIN_NAME: ${ADMIN_NAME:-Administrateur}
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/health"]
       interval: 15s
       timeout: 5s
-      retries: 3
-      start_period: 15s
+      retries: 5
+      start_period: 40s
     networks: [backnet, frontnet]
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 384M
           cpus: "0.50"
 
+  # Site React servi par Nginx, avec relais /api vers le backend (dossier client/)
   frontend:
     image: ${REGISTRY:-local}/mtn-frontend:${IMAGE_TAG:-dev}
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: ./client
     restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-8080}:8080"

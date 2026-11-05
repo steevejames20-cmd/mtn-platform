@@ -41,7 +41,7 @@ router.get(
     const where = { active: true };
     if (typeof q === 'string' && q.trim()) {
       const term = q.trim().slice(0, 50);
-      where.OR = [{ name: { contains: term } }, { description: { contains: term } }, { category: { contains: term } }];
+      where.OR = [{ name: { contains: term, mode: 'insensitive' } }, { description: { contains: term, mode: 'insensitive' } }, { category: { contains: term, mode: 'insensitive' } }];
     }
     if (minPrice !== undefined || maxPrice !== undefined) {
       where.price = {};

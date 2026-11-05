@@ -2,7 +2,7 @@
 
 Application web full-stack (projet académique) permettant de consulter, comparer et souscrire à des forfaits Internet mobile, avec un **paiement Mobile Money entièrement simulé**, un historique utilisateur et un espace administrateur.
 
-> ⚠️ **Simulation de paiement – Environnement de test.** Aucune API MTN / Orange réelle n'est appelée, aucun code PIN n'est demandé et aucun argent n'est débité.
+> **Attention : simulation de paiement, environnement de test.** Aucune API MTN / Orange réelle n'est appelée, aucun code PIN n'est demandé et aucun argent n'est débité.
 
 ## Stack technique
 
@@ -10,52 +10,46 @@ Application web full-stack (projet académique) permettant de consulter, compare
 | --- | --- |
 | Frontend | React 18 + Vite 6, React Router 6, CSS moderne (sans framework), icônes lucide-react, reçus PDF avec jsPDF |
 | Backend | Node.js + Express 4, validation zod, helmet, express-rate-limit |
-| Base de données | SQLite via Prisma ORM 6 (fichier `server/prisma/dev.db`) |
+| Base de données | PostgreSQL 16 via Prisma ORM 6 |
 | Authentification | JWT (admin : 8 h ; historique utilisateur : 30 min), mots de passe hachés bcrypt |
 
 ## Prérequis
 
-- Node.js **18 ou plus** (testé avec Node 24)
-- npm
+- Node.js **18 ou plus** (testé avec Node 24) et npm
+- Docker (Docker Desktop sous Windows) pour la base PostgreSQL
 
-## Installation et lancement
+## Lancement avec Docker (application complète)
 
-Depuis le dossier `forfaits-internet/` :
+```bash
+cp .env.example .env        # puis changer POSTGRES_PASSWORD, JWT_SECRET et ADMIN_PASSWORD
+docker compose up --build
+```
+
+Ouvrez ensuite **http://localhost:8080**. Le détail (architecture, variables, déploiement) est dans [DOCKER.md](DOCKER.md).
+
+## Développement local (rechargement automatique)
+
+Depuis la racine du dépôt. Sous Windows, `Lancer le site.bat` enchaîne ces étapes.
 
 ```bash
 npm run install:all
+cp .env.example .env                 # identifiants de la base
+cp server/.env.example server/.env   # configuration de l'API (même mot de passe de base que .env)
+npm run db:up                        # démarre PostgreSQL dans Docker
+npm run setup                        # crée les tables et insère les données de démonstration
+npm run dev                          # API sur le port 4000, site sur le port 5173
 ```
 
-Créez le fichier d'environnement du serveur (puis changez `JWT_SECRET`) :
-
-```bash
-cp server/.env.example server/.env
-```
-
-Créez la base SQLite et insérez les données de démonstration :
-
-```bash
-npm run setup
-```
-
-Lancez l'API (port 4000) et le site (port 5173) en même temps :
-
-```bash
-npm run dev
-```
-
-Ouvrez ensuite **http://localhost:5173**.
-
-Le serveur Vite redirige automatiquement `/api` vers `http://localhost:4000`.
+Ouvrez ensuite **http://localhost:5173**. Le serveur Vite redirige automatiquement `/api` vers `http://localhost:4000`. Pour arrêter la base : `npm run db:down`.
 
 ### Autres commandes
 
 | Commande | Effet |
 | --- | --- |
-| `npm test` | Tests d'intégration de l'API (base de test séparée `prisma/test.db`) |
+| `npm test` | Tests d'intégration de l'API (schéma PostgreSQL séparé `test` ; la base doit être démarrée) |
 | `npm run build` | Build de production du frontend (`client/dist`) |
 | `npm --prefix server run db:seed` | Réinsère les données de démo si les tables sont vides |
-| `npm --prefix server run db:reset` | ⚠️ Vide **toute** la base de développement puis la ré-alimente |
+| `npm --prefix server run db:reset` | Attention : vide **toute** la base de développement puis la ré-alimente |
 
 ## Comptes et données de démonstration
 
@@ -114,20 +108,23 @@ Schéma : `server/prisma/schema.prisma`
 
 ## Tests
 
-`npm test` exécute 6 suites d'intégration (`server/tests/api.test.js`) :
+`npm test` exécute les tests d'intégration (`server/tests/api.test.js`) :
 
 - catalogue (filtres, tri, recherche, forfaits inactifs masqués) ;
 - validation du numéro ;
 - parcours complet : paiement échoué, annulé, échec via `0000`, réussi, double paiement refusé ;
 - historique (code fictif, cloisonnement par numéro) ;
 - authentification admin et CRUD des forfaits ;
-- souscriptions admin (filtres, détail) et formulaire de contact.
+- souscriptions admin (filtres, détail) et formulaire de contact ;
+- sonde `/health` et recherche insensible à la casse.
 
 ## Arborescence
 
 ```
-forfaits-internet/
-├── package.json              # scripts globaux (install:all, setup, dev, test)
+mtn-platform/
+├── package.json              # scripts globaux (install:all, db:up, setup, dev, test)
+├── docker-compose.yml        # application complète (db, backend, frontend)
+├── DOCKER.md                 # guide Docker pour l'équipe
 ├── server/
 │   ├── prisma/
 │   │   ├── schema.prisma     # modèle de données

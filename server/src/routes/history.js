@@ -82,7 +82,7 @@ router.get(
     if (createdAt) where.createdAt = createdAt;
     if (typeof q === 'string' && q.trim()) {
       const term = q.trim().slice(0, 50);
-      where.AND = [{ OR: [{ reference: { contains: term } }, { subscription: { planName: { contains: term } } }] }];
+      where.AND = [{ OR: [{ reference: { contains: term, mode: 'insensitive' } }, { subscription: { planName: { contains: term, mode: 'insensitive' } } }] }];
     }
 
     const transactions = await prisma.transaction.findMany({

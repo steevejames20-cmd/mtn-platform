@@ -206,9 +206,9 @@ router.get(
       const term = q.trim().replace(/\s/g, '').slice(0, 50) || q.trim();
       and.push({
         OR: [
-          { phone: { contains: term } },
-          { planName: { contains: q.trim() } },
-          { transactions: { some: { reference: { contains: term.toUpperCase() } } } },
+          { phone: { contains: term, mode: 'insensitive' } },
+          { planName: { contains: q.trim(), mode: 'insensitive' } },
+          { transactions: { some: { reference: { contains: term.toUpperCase(), mode: 'insensitive' } } } },
         ],
       });
     }

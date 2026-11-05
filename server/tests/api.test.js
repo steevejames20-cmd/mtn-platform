@@ -1,10 +1,13 @@
-// Tests d'intégration de l'API sur une base SQLite dédiée (prisma/test.db)
+// Tests d'intégration de l'API sur un schéma PostgreSQL dédié ("test"), recréé à chaque exécution
+import 'dotenv/config';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
-import { rmSync } from 'node:fs';
 
-process.env.DATABASE_URL = 'file:./test.db';
+// Le schéma "test" isole ces tests des données du schéma "public" (développement)
+const dbUrl = new URL(process.env.DATABASE_URL || 'postgresql://mtn_user:changez_moi@localhost:5432/mtn_subscriptions');
+dbUrl.searchParams.set('schema', 'test');
+process.env.DATABASE_URL = dbUrl.toString();
 process.env.JWT_SECRET = 'secret-de-test';
 process.env.ADMIN_EMAIL = 'admin@test.cm';
 process.env.ADMIN_PASSWORD = 'Test@1234';
@@ -15,9 +18,8 @@ let prisma;
 
 before(async () => {
   const opts = { stdio: 'ignore', env: process.env };
-  // base de test jetable : on repart d'un fichier vierge à chaque exécution
-  for (const f of ['prisma/test.db', 'prisma/test.db-journal']) rmSync(f, { force: true });
-  execSync('npx prisma db push --skip-generate', opts);
+  // schéma de test jetable : on repart d'un schéma vierge à chaque exécution
+  execSync('npx prisma db push --force-reset --skip-generate --accept-data-loss', opts);
   execSync('node prisma/seed.js', opts);
   const { createApp } = await import('../src/app.js');
   ({ prisma } = await import('../src/lib/prisma.js'));
@@ -217,4 +219,16 @@ test('contact : message enregistré et visible par l’administrateur', async ()
   const token = await adminToken();
   const msgs = await api('/admin/messages', { token });
   assert.ok(msgs.data.messages.some((m) => m.name === 'Awa'));
+});
+
+test('sonde /health : API et base opérationnelles', async () => {
+  const res = await fetch(base.replace(/\/api$/, '') + '/health');
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { status: 'ok', database: 'up' });
+});
+
+test('recherche de forfaits insensible à la casse', async () => {
+  const { status, data } = await api('/plans?q=classique');
+  assert.equal(status, 200);
+  assert.ok(data.plans.some((p) => p.name === 'Forfait Classique'));
 });

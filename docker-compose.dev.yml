@@ -1,0 +1,6 @@
+# Développement local : expose PostgreSQL sur la machine (127.0.0.1 uniquement)
+# pour lancer l'API et Vite hors Docker (npm run dev). Commande : npm run db:up
+services:
+  db:
+    ports:
+      - "127.0.0.1:5432:5432"

@@ -1,8 +1,8 @@
+node_modules
+dist
 .git
-.gitignore
 .env
 .env.*
 Dockerfile
 .dockerignore
-README.md
-node_modules
+*.pdf

@@ -1,229 +1,252 @@
 # Docker – Guide pour l'équipe (Groupe 12)
 
 **Projet :** plateforme d'abonnement MTN – Docker & DevOps (ENSPD, département GIT)
-**Rôle concerné :** Responsable Docker (Baling Baling Charles, Bessawa Steeve)
-**Objet de ce document :** expliquer ce qui est fait côté Docker et comment chaque rôle s'y branche.
+**Responsables Docker :** Baling Baling Charles, Bessawa Steeve
+**Objet :** expliquer comment l'application NetConnect (React + Express + Prisma) est conteneurisée, et comment chaque rôle s'y branche.
 
 ---
 
-## 1. Ce qui est livré
+## 1. Vue d'ensemble
 
-| Élément | Fichier | Statut |
-|---|---|---|
-| Dockerfile backend (multi-stage, non-root) | `backend/Dockerfile` | Prêt |
-| Dockerfile frontend (Nginx non-root + reverse proxy) | `frontend/Dockerfile`, `frontend/nginx.conf` | Prêt |
-| Orchestration (3 services, volume, healthchecks, limites) | `docker-compose.yml` | Prêt |
-| Modèle de configuration sans secret | `.env.example` | Prêt |
-| Schéma SQL + données d'exemple (chargés au 1er démarrage) | `db/init/01-schema.sql` | Prêt |
-| Application de test (MVP : forfaits, souscription, historique, health) | `backend/`, `frontend/public/` | Prête (remplaçable) |
+| Service | Dossier | Image de base | Rôle | Port |
+|---|---|---|---|---|
+| `frontend` | `client/` | Node 20.18 (build) puis Nginx 1.27.2 non-root | Sert le site React et relaie `/api` vers le backend | **8080 (seul port publié)** |
+| `backend` | `server/` | Node 20.18 alpine | API Express + Prisma | 4000 (interne) |
+| `db` | – | PostgreSQL 16.4 alpine | Base de données, volume `pgdata` | 5432 (interne) |
 
-**Ce qui a été vérifié :** les 7 tests du backend passent ; l'API fonctionne contre un vrai PostgreSQL 16 avec notre schéma ; l'interface fonctionne dans un navigateur (mobile) ; `docker compose config` valide le Compose.
-**À valider au premier lancement sur un PC avec Docker :** `docker compose up --build` complet (build des images, `nginx.conf`, healthchecks). Si quelque chose échoue, prévenir le Responsable Docker avec la sortie de `docker compose logs`.
+```
+Navigateur --8080--> frontend (Nginx) --/api--> backend (Express :4000) --> db (PostgreSQL)
+                      réseau frontnet           réseaux frontnet + backnet    réseau backnet
+```
+
+Les noms de services Compose (`frontend`, `backend`, `db`) restent ceux du cahier des charges, même si les dossiers s'appellent `client/` et `server/`.
 
 ---
 
-## 2. Démarrage en 3 commandes
+## 2. Démarrage avec Docker (3 commandes)
 
 Prérequis : Docker Desktop (Windows) ou Docker Engine + plugin Compose (Linux), et Git.
 
 ```bash
 git clone <url-du-depot> && cd mtn-platform
-cp .env.example .env          # Windows PowerShell : Copy-Item .env.example .env
+cp .env.example .env          # PowerShell : Copy-Item .env.example .env
 docker compose up --build
 ```
 
-Puis ouvrir **http://localhost:8080**. Pour arrêter : `Ctrl+C` puis `docker compose down`.
+Avant de lancer, **ouvrir `.env` et changer** `POSTGRES_PASSWORD`, `JWT_SECRET` et `ADMIN_PASSWORD`.
+Générer un secret JWT : `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
 
-> Si vous oubliez `cp .env.example .env`, Compose s'arrête avec le message « Copier .env.example vers .env ». C'est voulu : aucun secret n'est écrit dans le code.
+Puis ouvrir **http://localhost:8080** (administration : http://localhost:8080/admin, avec `ADMIN_EMAIL` et `ADMIN_PASSWORD` du `.env`).
 
-**Économie de data MTN :** le premier `--build` télécharge quelques dizaines à ~200 Mo (estimation) d'images de base (Node, Nginx, PostgreSQL en alpine). Faites-le une fois en Wi-Fi ; les lancements suivants utilisent le cache et ne téléchargent presque rien.
+Au premier démarrage, le backend crée les tables (`prisma db push`), le compte administrateur et les données de démonstration (12 forfaits, 28 souscriptions). Aux démarrages suivants, rien n'est réécrit.
+
+Arrêt : `Ctrl+C` puis `docker compose down` (les données restent). `docker compose down -v` **supprime** les données.
+
+> Le premier `--build` télécharge les images de base et les moteurs Prisma (plusieurs dizaines de Mo). À faire une fois, en Wi-Fi ; les builds suivants utilisent le cache.
 
 ---
 
-## 3. Structure du dépôt
+## 3. Développement sans conteneur pour l'API et le site
+
+Utile pour modifier le code avec rechargement automatique. Seule la base tourne dans Docker.
+
+```bash
+npm run install:all                 # dépendances racine, server et client
+cp .env.example .env                # (une fois) identifiants de la base
+cp server/.env.example server/.env  # (une fois) configuration de l'API
+npm run db:up                       # démarre PostgreSQL, exposé sur 127.0.0.1:5432
+npm run setup                       # crée les tables et les données de démonstration
+npm run dev                         # API sur :4000, site sur http://localhost:5173
+```
+
+Sous Windows, `Lancer le site.bat` enchaîne ces étapes. Arrêter la base : `npm run db:down`.
+
+Le mot de passe de `DATABASE_URL` dans `server/.env` doit être le même que `POSTGRES_PASSWORD` du `.env` racine.
+
+---
+
+## 4. Structure du dépôt
 
 ```
 mtn-platform/
-├── backend/                 # Node.js / Express (port 3000)
-│   ├── Dockerfile
-│   ├── .dockerignore
-│   ├── package.json + package-lock.json   # le lockfile DOIT être commité
-│   ├── app.js, server.js
-│   └── tests/               # tests lancés par `npm test`
-├── frontend/
-│   ├── Dockerfile
-│   ├── nginx.conf           # sert le site + proxy /api et /health vers le backend
-│   ├── .dockerignore
-│   └── public/              # index.html, style.css, app.js
-├── db/init/01-schema.sql    # exécuté UNIQUEMENT à la création du volume
-├── docker-compose.yml
-├── .env.example             # modèle ; le vrai .env n'est jamais commité
-├── .gitignore
-└── DOCKER.md                # ce document
+|-- client/                  # React + Vite
+|   |-- Dockerfile, .dockerignore
+|   |-- nginx.conf           # site + proxy /api et /health vers le backend
+|   `-- src/ ...
+|-- server/                  # Express + Prisma
+|   |-- Dockerfile, .dockerignore
+|   |-- docker-entrypoint.sh # db push, seed, puis démarrage de l'API
+|   |-- prisma/schema.prisma, seed.js
+|   |-- src/ ...
+|   `-- tests/api.test.js
+|-- docker-compose.yml       # production / cloud : 3 services
+|-- docker-compose.dev.yml   # ajoute l'accès local à PostgreSQL (npm run db:up)
+|-- .env.example             # modèle de configuration, sans secret
+|-- .gitignore, .gitattributes
+|-- Lancer le site.bat       # lanceur Windows (développement)
+|-- README.md                # description fonctionnelle de l'application
+`-- DOCKER.md                # ce document
 ```
 
-Dossier à ajouter par le Responsable CI/CD : `.github/workflows/ci-cd.yml`.
+À ajouter par le Responsable CI/CD : `.github/workflows/ci-cd.yml`.
 
 ---
 
-## 4. Architecture et réseau
+## 5. Variables d'environnement (`.env` à la racine)
 
-| Service | Image | Port interne | Exposé à l'extérieur ? | Réseau(x) |
-|---|---|---|---|---|
-| `frontend` | Nginx 1.27.2 (non-root) | 8080 | **Oui : `8080`** | `frontnet` |
-| `backend` | Node 20.18.0 alpine | 3000 | Non | `frontnet`, `backnet` |
-| `db` | PostgreSQL 16.4 alpine | 5432 | Non | `backnet` |
-
-Le navigateur parle uniquement à Nginx. Nginx relaie `/api/*` et `/health` au backend. La base n'est joignable que par le backend. **Un seul port est à ouvrir côté serveur : 8080.**
-
-Volume : `pgdata` (données PostgreSQL). `docker compose down` conserve les données ; `docker compose down -v` les **supprime**.
-
-Ressources plafonnées (offres gratuites) : db 256 Mo, backend 256 Mo, frontend 64 Mo, soit environ 576 Mo au total.
-
----
-
-## 5. Variables d'environnement
-
-Définies dans `.env` (copie de `.env.example`).
-
-| Variable | Rôle | Défaut dans `.env.example` |
+| Variable | Rôle | Obligatoire |
 |---|---|---|
-| `POSTGRES_USER` | Utilisateur de la base | `mtn_user` |
-| `POSTGRES_PASSWORD` | Mot de passe de la base | `changez_moi` → **à changer** |
-| `POSTGRES_DB` | Nom de la base | `mtn_subscriptions` |
-| `NODE_ENV` | Mode du backend | `production` |
-| `FRONTEND_PORT` | Port publié sur l'hôte | `8080` |
-| `REGISTRY` | Préfixe du registre d'images | `local` |
-| `IMAGE_TAG` | Version des images | `dev` |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Identifiants de la base. Le mot de passe est inséré dans une URL : lettres et chiffres uniquement | Oui |
+| `JWT_SECRET` | Secret de signature des jetons (admin et historique) | Oui |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Compte administrateur créé au premier démarrage | Oui |
+| `ADMIN_NAME` | Nom affiché de l'administrateur | Non (`Administrateur`) |
+| `FRONTEND_PORT` | Port publié sur la machine | Non (`8080`) |
+| `REGISTRY`, `IMAGE_TAG` | Nom des images : `${REGISTRY}/mtn-backend:${IMAGE_TAG}` | Non (`local`, `dev`) |
 
-Les images sont nommées `${REGISTRY}/mtn-backend:${IMAGE_TAG}` et `${REGISTRY}/mtn-frontend:${IMAGE_TAG}`. Exemple pour GHCR : `REGISTRY=ghcr.io/<organisation>` et `IMAGE_TAG=<sha-ou-version>`.
-
----
-
-## 6. Contrat applicatif (si vous remplacez l'application de test)
-
-L'application fournie est un MVP de test. Si le groupe a sa propre application, elle fonctionne avec nos Dockerfiles à condition de respecter ceci :
-
-**Backend**
-- Écoute sur le port **3000** et démarre avec `node server.js` (sinon modifier le `CMD` du Dockerfile).
-- Lit la connexion à la base dans `DATABASE_URL` et le port dans `PORT`. Aucun secret en dur.
-- `GET /health` répond **200** quand tout va bien, **503** si la base est injoignable.
-- Routes sous `/api/` : `GET /api/plans`, `POST /api/subscriptions` (`{ "phone", "plan_id" }`), `GET /api/subscriptions/:phone`.
-- `package-lock.json` commité (le build utilise `npm ci`), et un script `npm test`.
-
-**Frontend**
-- Fichiers statiques dans `frontend/public/`.
-- Appels à l'API en **URL relatives** (`/api/...`, jamais `http://localhost:3000`), sinon cela casse sur le cloud.
-
-**Base de données**
-- Le schéma vit dans `db/init/*.sql`. Ces scripts ne s'exécutent qu'à la **première** création du volume. Après une modification : `docker compose down -v && docker compose up --build`.
+Si une variable obligatoire manque, Compose s'arrête avec un message qui la nomme.
+Changer `ADMIN_PASSWORD` après le premier démarrage ne modifie pas le compte existant (le seed ne réécrit pas un administrateur déjà présent).
 
 ---
 
-## 7. Ce que chaque rôle doit faire de ce travail
+## 6. Ce qui a changé dans le code pour l'aligner avec Docker
 
-### Chef de projet
-- Valider avec le groupe le planning (3 ou 6 semaines, voir section 8 du cahier des charges).
-- Suivre la checklist de la section 9 ci-dessous.
+| Changement | Pourquoi |
+|---|---|
+| `server/prisma/schema.prisma` : `sqlite` devient `postgresql` | Le cahier des charges impose PostgreSQL conteneurisé ; un fichier SQLite ne convient pas à un conteneur sans état |
+| `mode: 'insensitive'` ajouté aux recherches (`plans.js`, `history.js`, `admin.js`) | SQLite ignorait la casse, PostgreSQL non : sans cela, chercher « classique » ne trouverait plus « Forfait Classique » |
+| Route `GET /health` dans `server/src/app.js` | Sonde Docker : 200 si l'API et la base répondent, 503 sinon (`/api/health` existe toujours) |
+| `app.set('trust proxy', 1)` | Derrière Nginx, les limiteurs de débit doivent lire la vraie IP du client, sinon tous les utilisateurs partagent le même compteur |
+| `prisma` passe de `devDependencies` à `dependencies` | Le conteneur exécute `prisma db push` au démarrage |
+| Tests : schéma PostgreSQL `test` au lieu du fichier `test.db` | Les tests n'effacent jamais les données du schéma `public` |
+| `client/dist`, `*.db` et le PDF de test retirés du dépôt | Fichiers générés : le build les recrée. Ils sont dans `.gitignore` |
+| Anciens dossiers `backend/`, `frontend/`, `db/` supprimés | Remplacés par `server/` et `client/` ; le schéma est créé par Prisma |
+
+---
+
+## 7. Ce que chaque rôle doit faire
 
 ### Responsable CI/CD
-Le pipeline GitHub Actions doit, à chaque push sur la branche principale :
 
-1. **Tester** : `cd backend && npm ci && npm test` (aucune base nécessaire, les tests utilisent une base simulée).
-2. **Construire et publier** les deux images vers GHCR (ou Docker Hub), avec `docker/build-push-action` :
-   - `backend/` → `ghcr.io/<org>/mtn-backend:<tag>`
-   - `frontend/` → `ghcr.io/<org>/mtn-frontend:<tag>`
-   - Plateformes : `linux/amd64,linux/arm64` (voir la section Cloud).
-3. **Déployer** par SSH sur le serveur : `docker compose pull && docker compose up -d --no-build`.
+À chaque push sur la branche principale :
 
-À prévoir :
-- **Secrets GitHub** (jamais dans le dépôt) : accès au registre, hôte SSH, utilisateur SSH, clé privée SSH.
-- Sur le serveur, `REGISTRY` et `IMAGE_TAG` sont dans le `.env` du serveur, mis à jour à chaque déploiement.
-- Le workflow se place dans `.github/workflows/ci-cd.yml`.
+1. **Tester** (nécessite PostgreSQL, fourni par un service du workflow) :
+   ```yaml
+   services:
+     postgres:
+       image: postgres:16.4-alpine
+       env:
+         POSTGRES_USER: mtn_user
+         POSTGRES_PASSWORD: ci_password
+         POSTGRES_DB: mtn_subscriptions
+       ports: ["5432:5432"]
+       options: >-
+         --health-cmd "pg_isready -U mtn_user" --health-interval 5s
+         --health-timeout 5s --health-retries 10
+   steps:
+     - uses: actions/checkout@v4
+     - uses: actions/setup-node@v4
+       with: { node-version: 20 }
+     - run: cd server && npm ci && npx prisma generate && npm test
+       env:
+         DATABASE_URL: postgresql://mtn_user:ci_password@localhost:5432/mtn_subscriptions?schema=public
+   ```
+2. **Construire et publier** deux images vers GHCR : `server/` vers `ghcr.io/<org>/mtn-backend:<tag>` et `client/` vers `ghcr.io/<org>/mtn-frontend:<tag>`, en `linux/amd64,linux/arm64`.
+3. **Déployer** par SSH : `docker compose pull && docker compose up -d --no-build`.
+
+Secrets GitHub (jamais dans le dépôt) : accès au registre, hôte, utilisateur et clé SSH. Sur le serveur, `REGISTRY`, `IMAGE_TAG` et tous les secrets sont définis dans le `.env` du serveur.
 
 ### Responsable Cloud
-- Le serveur n'a besoin que de Docker + plugin Compose, du `docker-compose.yml`, de son propre `.env` (avec un **vrai mot de passe fort**) et d'un accès au registre (`docker login ghcr.io`).
-- **Ouvrir uniquement le port 8080** (ou 80/443 si vous placez un reverse proxy HTTPS devant). Ne jamais ouvrir 3000 ni 5432.
-- **Architecture du serveur :** si l'offre gratuite est en ARM (c'est le cas des instances Ampere d'Oracle Cloud Always Free), il faut des images `arm64`. Les images de base que nous utilisons (Node, Nginx, PostgreSQL) existent en `amd64` et `arm64` ; la CI doit donc publier en multi-architecture.
-- Mémoire : prévoir au moins ~600 Mo disponibles pour la stack.
-- Sauvegarde éventuelle de la base : `docker compose exec db pg_dump -U <POSTGRES_USER> <POSTGRES_DB> > sauvegarde.sql`.
+
+- Le serveur a besoin de Docker + Compose, de `docker-compose.yml`, de son propre `.env` (vrais mots de passe forts) et d'un accès au registre (`docker login ghcr.io`).
+- **Ouvrir uniquement le port 8080** (ou 80/443 derrière un reverse proxy HTTPS). Jamais 4000 ni 5432.
+- Serveur ARM (par exemple les instances Ampere d'Oracle Cloud Always Free) : il faut des images `arm64`, donc une CI multi-architecture.
+- Mémoire : les limites cumulées sont d'environ 700 Mo (db 256, backend 384, frontend 64). Prévoir au moins 1 Go de RAM libre.
+- Sauvegarde : `docker compose exec db pg_dump -U <POSTGRES_USER> <POSTGRES_DB> > sauvegarde.sql`.
+- Données de démonstration : créées au premier démarrage ; pour une base vide, supprimer les forfaits et souscriptions depuis l'administration.
 
 ### Responsable Qualité
-- **Tests automatiques :** `cd backend && npm test` (7 tests : validation des numéros, health 200/503, forfaits, souscription, historique, erreurs).
-- **Recette manuelle (critères du cahier des charges, section 11)** : voir la checklist ci-dessous.
-- **Documentation et rapport :** ce document donne la matière pour la partie Docker (choix techniques en section 8).
+
+- Tests automatiques : base lancée (`npm run db:up`), puis `npm test` à la racine (suites d'intégration de l'API, dont `/health` et la recherche).
+- Recette manuelle : checklist de la section 9.
+- Rapport : les choix techniques sont en section 8.
+
+### Équipe applicative (client / server)
+
+- L'application tourne telle quelle dans les conteneurs. Les appels du site utilisent des URLs relatives (`/api/...`) : à conserver.
+- Toute modification de `schema.prisma` : tester avec `npm run setup`. Au démarrage, le conteneur applique le schéma avec `prisma db push`, qui refuse les changements destructifs.
+- Ne pas commiter `.env`, `server/.env`, `client/dist`, ni de fichiers `.db`.
 
 ---
 
 ## 8. Choix techniques (pour le rapport)
 
-| Exigence du cahier des charges | Réponse |
+| Exigence | Réponse |
 |---|---|
-| Versions figées, pas de `latest` | `node:20.18.0-alpine3.20`, `nginx-unprivileged:1.27.2-alpine`, `postgres:16.4-alpine`, dépendances npm figées par `package-lock.json` |
-| Sobriété data | Images alpine, build multi-stage, cache npm BuildKit, `.dockerignore` |
-| Utilisateur non-root | `USER node` (backend), image Nginx « unprivileged » (port 8080), PostgreSQL non-root par défaut |
-| Aucun secret dans le dépôt / les images | Variables `${...}` dans Compose, `.env` dans `.gitignore`, `.env.example` sans valeur réelle |
+| Versions figées, pas de `latest` | `node:20.18.0-alpine3.20`, `nginx-unprivileged:1.27.2-alpine`, `postgres:16.4-alpine`, dépendances npm figées par les `package-lock.json` |
+| Sobriété des données | Images alpine, builds multi-stage, cache npm BuildKit, `.dockerignore`, compression gzip et cache long des fichiers `/assets` dans Nginx |
+| Non-root | `USER node` (backend), image Nginx « unprivileged » (port 8080), PostgreSQL non-root par défaut |
+| Aucun secret dans le dépôt ni les images | Variables `${...}` dans Compose, `.env` ignoré par Git, variables obligatoires vérifiées par Compose |
 | Persistance | Volume nommé `pgdata` |
-| Healthchecks (BF8) | `pg_isready` (db), `/health` (backend), page d'accueil (frontend) ; `depends_on: service_healthy` impose l'ordre de démarrage |
+| Healthchecks | `pg_isready` (db), `/health` (backend, vérifie aussi la base), page d'accueil (frontend) ; `depends_on: service_healthy` impose l'ordre db, backend, frontend |
 | Ports limités | Seul `8080` est publié |
 | Ressources limitées | `deploy.resources.limits` sur chaque service |
-| Une commande (BF2) | `docker compose up --build` |
+| Arrêt propre | `init: true` (le processus principal reçoit les signaux) |
+| Une seule commande | `docker compose up --build` |
+| Fuseau horaire | `TZ=Africa/Douala` sur le backend : les « jours » du tableau de bord et des filtres suivent l'heure du Cameroun |
 
 ---
 
-## 9. Checklist de recette (critères d'acceptation)
+## 9. Checklist de recette
 
 | Critère | Comment vérifier | Fait |
 |---|---|---|
-| Démarrage sur PC vierge | `cp .env.example .env && docker compose up --build` sans erreur | ☐ |
-| Accès local sur le port 8080 | Ouvrir http://localhost:8080 | ☐ |
-| Consultation / souscription / historique | Utiliser l'interface (numéro ex. `670123456`) | ☐ |
-| Health check | `curl http://localhost:8080/health` → `{"status":"ok","database":"up"}` | ☐ |
-| Persistance | Souscrire, `docker compose down`, `docker compose up`, l'historique est toujours là | ☐ |
-| Aucun secret dans le dépôt | `git ls-files \| grep -i "^\.env$"` ne renvoie rien ; relire le diff avant push | ☐ |
-| Déploiement cloud | Même URL de test sur le serveur : `curl http://<ip>:8080/health` | ☐ |
-| Même image PC / cloud | Voir l'encadré ci-dessous | ☐ |
-| Mêmes réponses PC / cloud | Comparer `curl .../api/plans` sur les deux | ☐ |
-| Push → build, test, publication, déploiement | Pousser un commit et suivre l'onglet Actions | ☐ |
+| Démarrage sur PC vierge | `cp .env.example .env`, mots de passe changés, `docker compose up --build` sans erreur | [ ] |
+| Services en bonne santé | `docker compose ps` : db, backend, frontend `healthy` | [ ] |
+| Accès local | http://localhost:8080 affiche le catalogue | [ ] |
+| Parcours complet | Choisir un forfait, souscrire, payer (simulation), reçu PDF, historique | [ ] |
+| Administration | http://localhost:8080/admin avec le compte du `.env` | [ ] |
+| Sonde de santé | `curl http://localhost:8080/health` renvoie `{"status":"ok","database":"up"}` | [ ] |
+| Persistance | Souscrire, `docker compose down`, `docker compose up`, l'historique est toujours là | [ ] |
+| Aucun secret dans le dépôt | `git ls-files` ne contient aucun `.env` ; relire `git diff` avant push | [ ] |
+| Déploiement cloud | `curl http://<ip>:8080/health` sur le serveur | [ ] |
+| Même image PC / cloud | Voir l'encadré ci-dessous | [ ] |
+| Pipeline | Un push déclenche tests, build, publication, déploiement | [ ] |
 
-**Prouver que c'est la même image (important).** Deux builds séparés (un sur le PC, un sur le serveur) donnent des identifiants **différents**, même avec le même code. Pour que ce soit la même image :
-1. La CI construit et publie l'image dans le registre.
-2. Le PC **et** le serveur la **téléchargent** (`docker compose pull`) au lieu de la reconstruire.
-3. Comparer le *digest* : `docker image inspect <image> --format '{{index .RepoDigests 0}}'`. Les deux machines doivent afficher le même `sha256:...`.
-
-Si le PC est en x86 et le serveur en ARM, l'image locale (`.Id`) diffère forcément par architecture ; c'est le digest du manifeste multi-architecture qui reste identique.
+**Prouver que c'est la même image.** Deux builds séparés donnent des identifiants différents. Il faut : (1) la CI construit et publie ; (2) le PC et le serveur **téléchargent** (`docker compose pull`) ; (3) comparer le digest : `docker image inspect <image> --format '{{index .RepoDigests 0}}'`. Les deux machines doivent afficher le même `sha256:...`. Entre x86 et ARM, `.Id` diffère par architecture ; le digest du manifeste multi-architecture reste identique.
 
 ---
 
 ## 10. Commandes utiles
 
 ```bash
-docker compose ps                       # état et santé des services
-docker compose logs -f backend          # suivre les logs d'un service
-docker compose up -d --build            # lancer en arrière-plan
-docker compose down                     # arrêter (données conservées)
-docker compose down -v                  # arrêter ET supprimer les données
-docker compose exec db psql -U mtn_user -d mtn_subscriptions   # ouvrir la base
-docker image ls                         # taille des images
-docker buildx build --platform linux/amd64,linux/arm64 -t <image> backend   # multi-architecture
+docker compose ps                         # état et santé
+docker compose logs -f backend            # logs d'un service
+docker compose up -d --build              # arrière-plan
+docker compose down                       # arrêt (données conservées)
+docker compose down -v                    # arrêt + suppression des données
+docker compose exec db psql -U <POSTGRES_USER> -d <POSTGRES_DB>
+docker image ls                           # taille des images
+npm run db:up / db:down                   # base seule pour le développement
 ```
 
 ## 11. Dépannage
 
 | Symptôme | Cause probable | Solution |
 |---|---|---|
-| `required variable POSTGRES_... is missing` | `.env` absent | `cp .env.example .env` |
+| `required variable ... is missing` | `.env` absent ou incomplet | `cp .env.example .env` et vérifier les variables |
 | `port is already allocated` (8080) | Port déjà utilisé | Changer `FRONTEND_PORT` dans `.env` |
-| Backend « unhealthy » | Base pas prête ou mauvais identifiants | `docker compose logs db backend` ; vérifier `.env` |
-| Mot de passe changé mais la base refuse | Le volume garde l'ancien mot de passe | `docker compose down -v` puis relancer (supprime les données) |
-| Schéma SQL modifié, sans effet | Scripts `db/init` exécutés seulement à la création du volume | `docker compose down -v` puis relancer |
-| `npm ci` échoue au build | `package-lock.json` absent ou désynchronisé | Le régénérer (`npm install`) et le commiter |
-| L'interface charge mais « API hors ligne » | Le frontend appelle une URL absolue, ou le backend est arrêté | Utiliser des URLs relatives ; `docker compose ps` |
-| Téléchargements lents / forfait épuisé | Images non en cache | Télécharger en Wi-Fi ; ne pas faire `docker system prune -a` inutilement |
+| Backend `unhealthy` ou qui redémarre | Base pas prête, mauvais identifiants, ou schéma refusé | `docker compose logs db backend` |
+| `Authentication failed` (Prisma) | Mot de passe changé après la création du volume, ou caractères spéciaux dans l'URL | `docker compose down -v` puis relancer ; mot de passe alphanumérique |
+| Backend tué faute de mémoire (`Killed`, code 137) | Limite de 384 Mo trop basse sur la machine | Augmenter `memory` du backend dans `docker-compose.yml` |
+| `exec ./docker-entrypoint.sh: no such file` | Fins de ligne Windows dans le script | Déjà corrigé dans le Dockerfile ; sinon `git config core.autocrlf input` et recloner |
+| Échec du build au téléchargement des moteurs Prisma | Réseau qui bloque `binaries.prisma.sh` | Utiliser un autre réseau pour le premier build |
+| Site chargé mais « API hors ligne » ou erreurs 502 | Backend arrêté | `docker compose ps`, puis logs du backend |
+| Modification de `schema.prisma` sans effet | Le conteneur utilise l'ancienne image | `docker compose up --build` |
+| Tests : `Can't reach database server` | Base non démarrée | `npm run db:up` |
 
 ## 12. Règles Git
 
-- Ne **jamais** commiter `.env` (déjà dans `.gitignore`).
-- Commiter `package-lock.json`.
-- Avant chaque push : relire `git diff` pour vérifier qu'aucun secret n'apparaît.
-- Toute modification des Dockerfiles ou du Compose : prévenir le Responsable Docker.
+- Ne **jamais** commiter `.env` ni `server/.env`.
+- Commiter les `package-lock.json` (racine, `server/`, `client/`).
+- Relire `git diff` avant chaque push pour vérifier qu'aucun secret n'apparaît.
+- Toute modification des Dockerfiles ou de Compose : prévenir les Responsables Docker.
